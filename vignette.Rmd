@@ -1,0 +1,434 @@
+---
+title: "Identifying East and West Germans in the European Social Survey: A demonstration in R"
+author: "Philippe Joly, Humboldt-Universität zu Berlin & WZB Berlin Social Science Center"
+date: "March 2018"
+output:
+  html_document:
+    includes:
+      before_body: doc_prefix.html
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+---
+
+![&nbsp;](ccby.png)
+
+This document is under a [CC BY 4.0 license](https://creativecommons.org/licenses/by/4.0/). The vignette was writen in R markdown and the original script is available on my [GitHub page](https://github.com/jolyphil/ess-east-west). Comments and pull requests are welcome. 
+
+**Reference**:
+
+> Joly, Philippe. 2018. “Generations and Protest in Eastern Germany: Between Revolution and Apathy.” _WZB Discussion Paper_ SP V 2018-101 (June). doi: [10.17605/OSF.IO/GJ53P](https://doi.org/10.17605/OSF.IO/GJ53P).
+
+---
+
+## Identifying East and West Germans: How to account for migration?
+
+Almost 30 years after the fall of the Berlin Wall, traces of the former east-west division are still visible everywhere in Germany: in the city landscapes, in the economy, and in the political culture. But how can we study differences in attitudes, beliefs, and behavior between East and West Germans? 
+
+In this vignette, I would like to introduce a technique I have developed in [a recent paper](https://doi.org/10.17605/OSF.IO/GJ53P) to compare the political orientations of East and West Germans using the European Social Survey (ESS). 
+
+If you have ever worked with the ESS, you might know that there is one variable in the core dataset, `intewde`, indicating whether a respondent was interviewed in Eastern or Western Germany. For simple regional comparisons, this variable might work. However, if you are interested in how citizens of Germany have been marked by the historical division of their country, this variable is insufficient. 
+
+One major problem is that the current location of a respondent says little about his or her background. A respondent might just have moved to one region after having lived his or her entire life in the other. This approach does not take into account the massive east-west migration that took place during and after the Cold War. 
+
+## How to define an “East German” and a “West German”? 
+
+When scholars compare East and West Germans, they usually want to assess differences produced by the experience of living in two different states with distinct economic and political systems. Furthermore, most observers agree that the length of exposure to a given system and the age at which a person was exposed matter. The literature on political socialization suggests that the period between mid-adolescence and early adulthood is crucial for the development of one’s political orientation and habits. Ideally, we would like to know at what point during their lifetime did certain citizens live in Eastern or Western Germany. 
+
+## Assembling the data from the ESS: some challenges 
+
+The ESS has all the information needed to determine whether a respondent was socialized in Eastern or Western Germany, but a lot of data manipulation is necessary to get there. This difficulty stems from three problems:
+
+1. The variables necessary to reconstruct the migration of a respondent within Germany are saved in separate files (the “country-specific data”), which have to be merged to the main “country files”.
+2. For the first seven rounds of the ESS, these complementary datasets are saved as SPSS portable files (.por extension), which are not well supported in other programs.
+3. Many variables have to be combined to classify the respondents properly. 
+  
+The script I present here reproduces in R the procedure I have implemented in my paper on “[Protest and generations in Eastern Germany](https://doi.org/10.17605/OSF.IO/GJ53P).” This paper compares the protest behavior of East and West Germans across generations and over time. It concludes that East Germans, especially those who grew up during the Cold War, participate less in protest activities than West Germans from the same generation after controlling for other individual characteristics. The paper defines an East German as someone who spent the majority of his or her early formative years, that is, between 15 and 25 years old, in Eastern Germany. 
+
+## A demonstration in R
+
+### Importing and converting the country-specific data
+
+Before starting to work with R, go on the ESS website and then on [Germany’s page](http://www.europeansocialsurvey.org/data/country.html?c=germany) to download the “country-specific data” for the rounds you need. For rounds 1 to 7, you will only have the option to download a POR datafile (click “Download SPSS”). For round 8, download the SAV file (again, click “Download SPSS”). Save and decompress all the datafiles in `data/raw/`.
+
+In R, load the necessary packages for this demonstration (if needed, install them with `install.packages`).
+
+```{r load_packages, message = FALSE}
+# install.packages("dplyr")
+# install.packages("essurvey")
+# install.packages("foreign")
+# install.packages("ggplot2")
+# install.packages("magrittr")
+# install.packages("stringr")
+# install.packages("tibble")
+
+library(dplyr) # Used for data wrangling
+library(essurvey) # Downloads main ESS datafiles
+library(foreign) # Converts SPSS files to R objects
+library(ggplot2) # Used for Data visualization
+library(magrittr) # Allows pipe operator
+library(stringr) # Performs string operations
+library(tibble) # Works with tibble dataframes
+```
+
+The script below browses the files in `data/raw/` and produces a character vector of the names of the files saved as `ESS*csDE` with a `.por` or a `.sav` extension.
+
+```{r list_spss_files} 
+spssfiles <- file.path("data", "raw") %>% 
+  list.files() %>%
+  .[(str_detect(., "ESS[:digit:]csDE.(por|sav)"))]
+```
+
+If you downloaded and decompressed the ESS country-specific data properly, you should get the following vector:
+
+```{r print_spss_files} 
+spssfiles
+```
+
+We let R loop over the vector of file names. We load the SPSS datafiles in the R environment and save them as RDA files in `data/`. 
+
+```{r save_spss_files, message = FALSE} 
+for (i in seq_along(spssfiles)) {
+  rootname <- str_sub(spssfiles[i], end = -5)
+  spssfilepath <- file.path("data", "raw", spssfiles[i])
+  rdafilepath <- file.path("data", paste0(rootname, ".Rda"))
+  read.spss(spssfilepath, use.value.labels = F, to.data.frame = T) %>%
+    as_tibble() %>%
+    saveRDS(file = rdafilepath)
+}
+```
+
+If everything went smoothly, you should now have the following files in the `data/` folder:
+
+```{r print_cs_rda} 
+file.path("data") %>%
+  list.files()
+```
+
+### Importing the main country-files
+
+Next, we take advantage of the `essurvey` package, which allows downloading the main ESS datafiles, directly from the ESS website. Save your ESS email as an environment variable with the `essurvey::set_email` function (make sure to register your email on the ESS website beforehand).
+
+```{r set_ess_email} 
+set_email("your@email.com")
+```
+
+The function `essurvey::show_country_rounds` displays the ESS rounds available for Germany. We save them as a numeric vector (alternatively, you can select the rounds you need for your own analysis).
+
+```{r save_ess_rounds} 
+rounds <- show_country_rounds("Germany")
+rounds
+```
+
+We then loop over the selected rounds, load the datasets in the R environment (with the function `essurvey::import_country`), and save them as separate RDA files.
+
+```{r save_ess_main_data, results='hide'} 
+for (i in seq_along(rounds)) {
+  rootname <- paste0("ESS", i, "DE")
+  rdafilepath <- file.path("data", paste0(rootname, ".Rda"))
+  import_country(country = "Germany", rounds = i) %>%
+    saveRDS(file = rdafilepath)
+}
+```
+
+We now have the following files in the `data/` folder:
+
+```{r print_all_data} 
+file.path("data") %>%
+  list.files()
+```
+
+### Merging the main country file with the country-specific data
+
+We are ready to merge the main datafiles with the country-specific data. For the rest of this demonstration, we will only work with the eighth ESS round, but the procedure would be valid for any round.
+
+We start by loading the main datafile and the respective country-specific data in two separate R objects.
+
+```{r load_data} 
+ess8main <- file.path("data", "ESS8DE.Rda") %>%
+  readRDS()
+ess8cs <- file.path("data", "ESS8csDE.Rda") %>%
+  readRDS()
+```
+
+We define the function `merge_ess_cs`, which takes as arguments two datasets: the main country-file and the country-specific data. The function renames the variables in the country-specific data in lowercase, merges the two datasets using respondents’ id and country as keys, and recodes the “labelled” variables as “numeric” (numeric variables are better handled by some R functions).
+
+In the last part of the function, we rename variables whose name varies depending on the ESS round. We will work with three variables: `wherebefore1990`, `yrmovedwest`, and `yrmovedeast`.
+
+```{r define_merge_fct} 
+merge_ess_cs <- function(main, cs) {
+  # Rename variable names to lowercase
+  names(cs) <- names(cs) %>% 
+    tolower()
+  
+  # Merge main and country-specific data by respondent id and country
+  merged <- left_join(main, cs, by=c("idno", "cntry")) %>% 
+    recode_missings()
+  
+  # Recode variables with class "labelled" to "numeric" 
+  for (i in 1:ncol(merged)) {
+    if (class(merged[[i]])=="labelled") {
+      merged[i] <- merged[[i]] %>%
+        as.numeric()
+    }
+  }
+  
+  # Rename variables so that everything is clearer and harmonized across ESS
+  # rounds
+  if (any(names(merged) == "splow5de")) { # Names for ESS 1, 2, 3, 4, 6, 7, 8
+    merged <- merged %>% 
+      mutate(
+        wherebefore1990 = splow2de,
+        yrmovedwest = splow4de,
+        yrmovedeast = splow5de
+        )
+  } else if (any(names(merged) == "n3")) { # Names for ESS 5
+    merged <- merged  %>% 
+      mutate(
+        wherebefore1990 = n3,
+        yrmovedwest = n5a_1,
+        yrmovedeast = n5b_1
+        )
+  } else {
+    print("Wrong data!")
+    break
+  }
+  
+  return(merged)
+}
+```
+
+The three variables are based on the following questions.
+
+`wherebefore1990` (named `splow2de` or `n3` in the original datasets) asked respondents “where did you live before 1990?” with four possible answers:
+
+1. In East Germany / East Berlin
+2. In West Germany / West Berlin
+3. In another country
+6. The respondent was not yet born in 1990
+
+If the respondent was interviewed in Eastern Germany, but answered ‘2’ to the previous question, a follow-up question, `yrmovedwest` (named `splow4de` or `n5a_1` in the original datasets), asked “when did you move to Western Germany?”
+
+If the respondent was interviewed in Western Germany, but answered ‘1’ to the previous question, a follow-up question, `yrmovedeast` (named `splow5de` or `n5b_1` in the original datasets), asked “when did you move to Eastern Germany?”
+
+We apply the function merge_ess_cs to the main ESS 8 country file and its respective country-specific data (you can repeat this operation for the rounds you need).
+
+```{r apply_merge, warning = FALSE} 
+ess8merged <- merge_ess_cs(ess8main, ess8cs)
+```
+
+### Generating new variables
+
+We now turn to the core of this demonstration. Below, we define a function `get_east_west_var`, which transforms the ESS data and returns a dataset containing a variable that categorizes respondents as East or West Germans. The function has three arguments.
+
+1. `essdata` is the merged ESS datafile (the main country-file merged with country-specific data).
+2. `agemin` is the age at which respondents begin their early formative years.
+3. `agemax` is the age at which the early formative years end. 
+
+`agemin` and `agemax` are guided by theory. Based on mainstream political socialization literature, the early formative years are set, by default, between 15 and 25 years old. Users, however, are free to change these values. The important point here is that being an “East German” or a “West German” means having spent _a given number of years, at a certain age_, in one region of Germany. You can define the age bracket that makes more sense for your own research.
+
+Let’s go through the function step by step. 
+
+**(1)** We define a maximum number of years of early political socialization. By default, the age bracket that matters most has 11 years (`agemax` is included as a full year, that’s why we add 1).
+
+**(2)** To prevent future errors, we save in the R environment the last year during which the survey was conducted.
+
+**(3)** We generate a series of new variables by transforming existing ones.
+
+**(3.1)** `eastintv` indicates whether the respondent was interviewed in Eastern Germany.
+
+**(3.2)** `eastbefore1990` indicates whether the respondent lived in East Germany before 1990.
+
+**(3.3)** `agemovedeast` indicates the age at which a respondent moved to Eastern Germany (if he or she did so).
+
+**(3.4)** `agemovedwest` indicates the age at which a respondent moved to Western Germany (if he or she did so).
+
+**(3.5)** `soctotyears` counts the number of years of socialization the respondent went through. This variable takes different values depending on the age of the respondent. 
+
+**(3.6)** `socyearseast` counts, of these years of socialization, how many were experienced in Eastern Germany. There are four patterns to consider. 
+
+_Case 1_: The respondent lived in the GDR and is still living in Eastern Germany.
+
+_Case 2_: The respondent lived in the GDR, but moved to Western Germany. 
+
+_Case 3_: The respondent lived in Western Germany before 1990 and is still living in Western Germany. 
+
+_Case 4_: The respondent lived in Western Germany, but moved to Eastern Germany. 
+
+**(3.7)** `eastsoc` indicates whether the respondent spent the majority of his or her formative years in Eastern Germany. If the respondent spent the same number of years in Eastern and Western Germany, more weight is given to the current location of the respondent. This variable is non-missing, for native East or West Germans born before 1990 and older than the minimum age of socialization (`agemin`). 
+
+**(3.8)** `eastsocall` adds other categories to `eastsoc` for younger and non-native citizens. In the end, the variable has 5 categories:
+
+1. West German: Born before 1990 and socialized mostly in Western Germany
+2. East German: Born before 1990 and socialized mostly in Eastern Germany
+3. Born before 1990, but too young to determine a region where socialized
+4. Born after 1990
+5. Non-native
+
+You can save the function in the R environment. 
+
+```{r define_get_var_fct} 
+get_east_west_var <- function(essdata, agemin = 15, agemax = 25) {
+  
+  # (1) Define the maximum number of years of early political socialization
+  #    (by default: 11)
+  rangemax <- agemax - agemin + 1
+  
+  # (2) Look for the last survey year
+  yrsurveymax <- max(essdata[["inwyye"]])
+  
+  # (3) Generate new variables
+  essdata <- essdata %>%
+    mutate(
+      # (3.1) Respondent interviewed in Eastern Germany? yes (1) / no (0)
+      eastintv = case_when(
+        intewde == 1 ~ 1,
+        intewde == 2 ~ 0),
+      
+      # (3.2) Lived in East Germany before 1990? yes (1) / no (0)
+      eastbefore1990 = case_when(
+        # Lived in East Germany / East Berlin
+        wherebefore1990 == 1 ~ 1,
+        # Lived in West Germany / West Berlin
+        wherebefore1990 == 2 ~ 0),
+      
+      # (3.3) Age when moved to East Germany
+      agemovedeast = case_when(
+        yrmovedeast <= yrsurveymax & (yrmovedeast - yrbrn) > 0 
+          ~ yrmovedeast - yrbrn),
+      
+      # (3.4) Age when moved to West Germany
+      agemovedwest = case_when(
+        yrmovedwest <= yrsurveymax & (yrmovedwest - yrbrn) > 0 
+          ~ yrmovedwest - yrbrn),
+      
+      # (3.5) Total years of early political socialization [0-rangemax]
+      soctotyears = case_when(
+        agea > agemax ~ rangemax,
+        agea >= agemin & agea <= agemax ~ agea - agemin,
+        !is.na(agea) ~ 0),
+      
+      # (3.6) Years of political socialization in Eastern Germany [0-rangemax]
+      socyearseast = case_when(
+        # Case 1: Lived in the GDR before 1990, still living in Eastern Germany
+        agea > agemax & eastintv == 1 & eastbefore1990 == 1 ~ rangemax,
+        agea >= agemin & agea <= agemax & eastintv == 1 & eastbefore1990 == 1 
+          ~ agea - agemin,
+        
+        # Case 2: Lived in the GDR before 1990, moved to Western Germany 
+        agemovedwest < agemin ~ 0,
+        agemovedwest >= agemin & agemovedwest <= agemax ~ agemovedwest - agemin,
+        agemovedwest > agemax ~ rangemax,
+        
+        # Case 3: Lived in West Germany before 1990, still living in West Germ.
+        eastintv == 0 & eastbefore1990 == 0 ~ 0,
+        
+        # Case 4: Lived in West Germany before 1990, moved to Eastern Germany
+        agemovedeast < agemin  & agea > agemax ~ rangemax,
+        agemovedeast < agemin  & agea >= agemin & agea <= agemax ~ agea - agemin,
+        agemovedeast >= agemin & agemovedeast <= agemax & 
+          agea > agemax ~ rangemax - (agemovedeast - agemin),
+        agemovedeast >= agemin & agemovedeast <= agemax & agea >= agemin & 
+          agea <= agemax ~ agea - agemovedeast,
+        agemovedeast > agemax ~ 0
+      ),
+      
+      # (3.7) Lived most formative years in Eastern Germany? yes (1) / no (0)
+      eastsoc = case_when(
+        soctotyears != 0 & (socyearseast / soctotyears) < 0.5 ~ 0, # West German
+        soctotyears != 0 & (socyearseast / soctotyears) > 0.5 ~ 1, # East German
+        soctotyears != 0 & (socyearseast / soctotyears) == 0.5 ~ eastintv), 
+      
+      # (3.8) Add other categories to eastsoc for younger and non-native citizens
+      eastsocall = case_when(
+        eastsoc == 0 ~ 1, # West German
+        eastsoc == 1 ~ 2, # East German
+        agea <= agemin & !is.na(eastbefore1990) ~ 3, # born before 1990, but too
+                                                     # young for socialization
+        wherebefore1990 == 6 ~ 4, # born after 1990
+        wherebefore1990 == 3 ~ 5) # non-native
+    )
+}
+```
+
+Finally, we apply the `get_east_west_var` function to the data we previously merged and save a new dataset, `finaldata`. 
+
+```{r save_finaldata} 
+finaldata <- get_east_west_var(ess8merged)
+```
+
+Let’s look at the data a bit more. The two commands below list observations of respondents who moved from Eastern to Western Germany and vice versa. 
+
+```{r print_tables} 
+finaldata %>% 
+  select(eastbefore1990, eastintv, agea, agemovedwest, 
+         socyearseast, eastsoc) %>% 
+  filter(!is.na(agemovedwest)) 
+
+finaldata %>% 
+  select(eastbefore1990, eastintv, agea, agemovedeast, 
+         socyearseast, eastsoc) %>% 
+  filter(!is.na(agemovedeast))
+```
+
+The script classified respondents as East or West Germans correctly by taking into account the age at which they moved across regions. 
+
+### Applications
+
+We finish this demonstration by plotting two examples of east-west differences. We start by converting the variable `eastsoc` to a factor variable named `eastsocfac`. This will help with labelling. 
+
+```{r covert_to_factor} 
+finaldata <- finaldata %>%
+  mutate(eastsocfac = factor(eastsoc,
+                             levels = c(0,1),
+                             labels = c("West German", "East German")))
+```
+
+In the first graph below, we see the relation between age and ideology (a left right scale going from 0, extreme left, to 10, extreme right). From the graph, it is clear that older East Germans (aged 60 to 80) are more left-leaning than the West Germans of the same age. This could be a legacy of the GDR. 
+
+```{r plot_graph1} 
+ggplot(data = filter(finaldata, !is.na(agea) & !is.na(lrscale) 
+                     & !is.na(eastsocfac))) +
+  geom_smooth(mapping = aes(x = agea, 
+                            y = lrscale, 
+                            color = eastsocfac),
+              method = "loess") +
+  theme(legend.title=element_blank()) + 
+  labs(x = "Age of respondent", 
+       y = "Left–right self-positioning [0-10]", 
+       caption = "(Based on local polynomial regressions. Source: ESS 2016)")
+```
+
+In the second graph, we plot the number of hours of paid work done by female respondents as a function of age. We see that East German women are more active on the labor market than West German women. Again, this could be a legacy of the different family models promoted during the Cold War in East and West Germany.
+
+```{r plot_graph2} 
+ggplot(data = filter(finaldata, !is.na(agea) & !is.na(wkhtot) 
+                     & !is.na(eastsocfac) & gndr==2 
+                     & agea >= 18 & agea <= 67)) +
+  geom_smooth(mapping = aes(x = agea, 
+                            y = wkhtot, 
+                            color = eastsocfac),
+              method = "loess") +
+  theme(legend.title=element_blank()) + 
+  labs(x = "Age of respondent (female respondents only)", 
+       y = "Total hours normally worked per week in main job",
+       caption = "(Based on local polynomial regressions. Source: ESS 2016)")
+```
+
+## Conclusion
+
+To conclude, the procedure introduced in this vignette offers a more consistent way of categorizing East and West Germans in the ESS and opens many possibilities of research on the legacies of the Cold War division in Germany.
+
+## Data sources
+
+* ESS Round 8: European Social Survey Round 8 Data (2016). Data file edition 2.0. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 7: European Social Survey Round 7 Data (2014). Data file edition 2.1. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 6: European Social Survey Round 6 Data (2012). Data file edition 2.3. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 5: European Social Survey Round 5 Data (2010). Data file edition 3.3. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 4: European Social Survey Round 4 Data (2008). Data file edition 4.4. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 3: European Social Survey Round 3 Data (2006). Data file edition 3.6. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 2: European Social Survey Round 2 Data (2004). Data file edition 3.5. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
+* ESS Round 1: European Social Survey Round 1 Data (2002). Data file edition 6.5. NSD - Norwegian Centre for Research Data, Norway – Data Archive and distributor of ESS data for ESS ERIC.
