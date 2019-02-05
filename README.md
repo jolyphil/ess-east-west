@@ -10,7 +10,7 @@
 
 As a complement to my (Philippe Joly's) paper on “Generations and Protest in Eastern Germany,” I have prepared a vignette explaining how to identify East and West Germans in the European Social Survey (ESS), while accounting for east-west migration in Germany. The categorization follows a political socialization approach.
 
-The vignette was written in R Markdown and has been published on my [website](http://philippejoly.net/files/code/ess-east-west/vignette.html). 
+The vignette was written in R Markdown and is available on my [website](http://philippejoly.net/files/code/ess-east-west/vignette.html). 
 
 ## Author <a name="Author"></a>
 
@@ -28,4 +28,4 @@ The vignette was written in R Markdown and has been published on my [website](ht
 Vignette content license: [![CC BY](https://img.shields.io/badge/CC%20BY-4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
 ### Code and software   
-Software associated with the vignette carries the following license: [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT).
+Software associated with the vignette carries the following license: [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
