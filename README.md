@@ -20,7 +20,7 @@ The vignette was written in R Markdown and the html output is available on my [w
 
 - [Contributing](CONTRIBUTING.md) - How to contribute to the development of this project.
 - [Code of conduct](CODE_OF_CONDUCT.md) - The code of conduct that contributors are expected to adhere to.
-- [Vignette](vignette.Rmd) - The Vignette demonstrating the procedure in R.
+- [Vignette](vignette.Rmd) - The vignette demonstrating the procedure in R.
 
 ## Licenses <a name="Licenses"></a>
 
