@@ -5,6 +5,7 @@
 2. [Author](#Author)
 3. [Key documents](#Key_documents)
 4. [Licenses](#Licenses)
+5. [Recommended citation](#Recommended_citation)
 
 ## Introduction <a name="Introduction"></a>
 
@@ -29,3 +30,8 @@ Vignette content license: [![CC BY](https://img.shields.io/badge/CC%20BY-4.0-lig
 
 ### Code and software   
 Software associated with the vignette carries the following license: [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Recommended citation <a name="Recommended_citation"></a>
+
+Philippe Joly. (2019, February 7). jolyphil/ess-east-west: First release (Version 1.0.0). Zenodo. 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.2559173.svg)](https://doi.org/10.5281/zenodo.2559173)
